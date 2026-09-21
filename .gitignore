@@ -1,0 +1,6 @@
+/mastbench
+/dist/
+*.out
+coverage.*
+.DS_Store
+results/

@@ -1,0 +1,48 @@
+---
+# Runs a benchmark from inside the cluster, which is the only way to measure
+# the broker rather than a port-forward tunnel.
+#
+# Edit the args, apply, then follow the logs. The Job does not restart on
+# failure: a benchmark that failed half way through has not produced a
+# smaller result, it has produced a wrong one.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mastbench
+spec:
+  backoffLimit: 0
+  completions: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: mastbench
+          image: ghcr.io/mastmq/bench:main
+          args:
+            - throughput
+            - --broker=tcp://emq-emqx:1883
+            - --publishers=20
+            - --rate=100
+            - --subscribers=20
+            - --duration=60s
+            - --qos=1
+          env:
+            # Go enables multipath TCP on dials from 1.24 and the OpenShift
+            # dataplane does not handle it. Without this the connections are
+            # accepted and every read fails with "permission denied".
+            - name: GODEBUG
+              value: multipathtcp=0
+            # If the broker authenticates, put the credential here rather
+            # than in args, where it would show up in `kubectl describe`.
+            - name: BENCH_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: mastbench-credentials
+                  key: username
+                  optional: true
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
