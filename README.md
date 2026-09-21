@@ -2,6 +2,8 @@
 
 # bench
 
+Part of [mast](https://mastmq.github.io/), a multi-tenant MQTT broker built on core NATS.
+
 Load and latency benchmarks for [mast](https://github.com/mastmq/mast). Any MQTT broker works; nothing here is mast-specific.
 
 ## Why not an off-the-shelf tool
