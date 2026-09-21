@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/mastmq/.github/main/assets/mark-256.png" alt="mast" width="88" align="right">
+
 # bench
 
 Load and latency benchmarks for [mast](https://github.com/mastmq/mast). Any MQTT broker works; nothing here is mast-specific.
