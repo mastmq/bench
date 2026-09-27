@@ -37,6 +37,13 @@ func commonFlags() []cli.Flag {
 			Sources: cli.EnvVars("BENCH_BROKER"),
 		},
 		&cli.StringFlag{
+			Name: "sub-broker",
+			Usage: "where subscribers connect, when it is not --broker. Pointing publishers and " +
+				"subscribers at different nodes of one cluster measures the hop between them, " +
+				"which a single address never crosses",
+			Sources: cli.EnvVars("BENCH_SUB_BROKER"),
+		},
+		&cli.StringFlag{
 			Name:    "username",
 			Usage:   "username, or the token these deployments carry there",
 			Sources: cli.EnvVars("BENCH_USERNAME"),
@@ -69,6 +76,7 @@ func commonFlags() []cli.Flag {
 func configFrom(cmd *cli.Command) load.Config {
 	return load.Config{
 		Broker:       cmd.String("broker"),
+		SubBroker:    cmd.String("sub-broker"),
 		Username:     cmd.String("username"),
 		Password:     cmd.String("password"),
 		ClientPrefix: cmd.String("prefix"),

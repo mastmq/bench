@@ -42,6 +42,8 @@ Every scenario takes `--qos 0|1|2` and `--json`. New scenarios keep both.
 
 **If the broker authenticates over HTTP, a connection storm is a load test of the auth service, not the broker.** mast's own deployment sits behind one limited to 10m of CPU, which a few hundred connections per second will flatten. Use an unauthenticated internal listener for connection-scale work if the broker has one, and say which you used when reporting a number.
 
+**On one host, stay under about 16k clients in total.** macOS gives every outgoing connection a port from one shared range of 16,384, whatever the destination. Past it, dials wait out their timeout instead of failing fast, so a run reports a steady loss of connections that looks exactly like a broker limit — it was taken for one, and a wrong fix was built for it. `--sub-broker` does not change this: both processes draw from the same range.
+
 **A run against a shared namespace is visible to everyone else in it.** `--prefix` exists so your clients are identifiable in someone else's logs. Use it.
 
 ## RESULTS.md

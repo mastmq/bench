@@ -28,14 +28,35 @@ import (
 
 // Config is what every scenario needs to reach the broker.
 type Config struct {
-	Broker   string
-	Username string
-	Password string
+	Broker string
+	// SubBroker is where subscribers connect. Empty means Broker. Against a
+	// cluster, a different node here is what makes a run cross the fabric.
+	SubBroker string
+	Username  string
+	Password  string
 	// ClientPrefix distinguishes this run's clients from anything else
 	// connected, which matters when benchmarking a shared environment.
 	ClientPrefix string
 	QoS          byte
 	Timeout      time.Duration
+}
+
+// Subscribers returns the config subscribers connect with.
+func (c Config) Subscribers() Config {
+	if c.SubBroker != "" {
+		c.Broker = c.SubBroker
+	}
+
+	return c
+}
+
+// Target describes where a run's traffic went, for the report.
+func (c Config) Target() string {
+	if c.SubBroker == "" || c.SubBroker == c.Broker {
+		return c.Broker
+	}
+
+	return c.Broker + " -> " + c.SubBroker
 }
 
 // DisconnectQuiesce is how long a client waits for in-flight work before

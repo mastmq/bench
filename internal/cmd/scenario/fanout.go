@@ -51,7 +51,7 @@ func runFanout(ctx context.Context, cmd *cli.Command) error {
 
 	collector := load.NewCollector(subs * rate * int(duration.Seconds()))
 
-	subClients, err := startSubscribers(cfg, subs, topic, collector)
+	subClients, err := startSubscribers(cfg.Subscribers(), subs, topic, collector)
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func runFanout(ctx context.Context, cmd *cli.Command) error {
 
 	res := report.Result{
 		Scenario: fmt.Sprintf("fanout 1pub x%d/s -> %dsub qos%d", rate, subs, cfg.QoS),
-		Broker:   cfg.Broker,
+		Broker:   cfg.Target(),
 		Started:  time.Now().Add(-elapsed),
 		Duration: elapsed,
 		Clients:  subs + 1,

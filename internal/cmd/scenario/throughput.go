@@ -54,7 +54,7 @@ func runThroughput(ctx context.Context, cmd *cli.Command) error {
 	expected := pubs * rate * int(duration.Seconds())
 	collector := load.NewCollector(expected)
 
-	subClients, err := startSubscribers(cfg, subs, topic, collector)
+	subClients, err := startSubscribers(cfg.Subscribers(), subs, topic, collector)
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func runThroughput(ctx context.Context, cmd *cli.Command) error {
 
 	res := report.Result{
 		Scenario: fmt.Sprintf("throughput %dpub x%d/s -> %dsub qos%d", pubs, rate, subs, cfg.QoS),
-		Broker:   cfg.Broker,
+		Broker:   cfg.Target(),
 		Started:  time.Now().Add(-elapsed),
 		Duration: elapsed,
 		Clients:  pubs + subs,
