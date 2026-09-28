@@ -1,5 +1,21 @@
 # Results
 
+## 2026-09-28: QoS 1 and 2 on the durable stream
+
+Same setup as the entry below: one core and two edges on one laptop, publishers on one edge and ten subscribers on the other. This measures [#11](https://github.com/mastmq/mast/issues/11)'s fix, which stores every QoS 1 and 2 publish on a replicated JetStream stream before acknowledging it and has each node read the stream through one consumer of its own.
+
+| Cross-node, 10 subscribers | core NATS only (before) p50 / p99 | durable stream p50 / p99 | Loss |
+| --- | --- | --- | --- |
+| QoS 1, 10 pub × 200/s (20k deliveries/s) | 0.53ms / 2.3ms | 0.64ms / 1.7ms | 0% / 0% |
+| QoS 1, 50 pub × 200/s (100k deliveries/s) | 0.94ms / 23ms | 12.8ms / 130ms | 0% / 0% |
+| QoS 0, 10 pub × 200/s | 0.61ms / 2.6ms | 0.73ms / 3.5ms | 0% / 0% |
+
+QoS 0 never touches the stream and does not move.
+
+The first version of the consumer acknowledged every message and pulled the default 500 at a time, and at 100k deliveries a second it built a backlog: p50 **395ms**, p99 650ms, nothing lost. Neither the core (about 70% of one CPU) nor the receiving edge was saturated, which pointed at pacing rather than capacity. Acknowledging cumulatively — one `AckAll` every 64 messages or 100ms — and pulling 2,000 at a time brought it to the figures above.
+
+What these runs do not show: the guarantee itself. That is a test rather than a benchmark — `TestClusterQoS1SurvivesALeafOutage` cuts an edge off from the core, publishes twenty QoS 1 messages on the other edge, and requires exactly twenty to arrive. Before the fix it received none.
+
 ## 2026-09-27: a local cluster, before and after the September fixes
 
 mast running as one `core` and two `edge` processes on one laptop (8 cores, 16GB, macOS), each edge joined to the core as a leaf node, load from `mastbench` on the same machine against the edges' unauthenticated internal listeners. Every throughput and fanout run crosses nodes: publishers on one edge, subscribers on the other, via the new `--sub-broker` flag. Compared: `250ffcc`, before the delivery fixes, and `3099db8`, after them and after the session-cost fixes. Numbers from one machine are for comparing builds, not for quoting as capacity.
