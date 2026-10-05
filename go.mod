@@ -5,7 +5,7 @@ go 1.27
 require (
 	github.com/carlmjohnson/versioninfo v0.22.5
 	github.com/eclipse/paho.mqtt.golang v1.5.1
-	github.com/urfave/cli/v3 v3.13.0
+	github.com/urfave/cli/v3 v3.14.0
 )
 
 require (
