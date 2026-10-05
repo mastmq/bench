@@ -40,9 +40,14 @@ spec:
                   name: mastbench-credentials
                   key: username
                   optional: true
+          # The CPU limit is explicit because a namespace LimitRange fills
+          # in a default for a container without one, and the default in the
+          # namespace this was first run in was 200m. A throttled generator
+          # reports a second of p99 latency that the broker never saw.
           resources:
             requests:
               cpu: 500m
               memory: 512Mi
             limits:
+              cpu: "1"
               memory: 2Gi

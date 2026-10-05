@@ -44,6 +44,10 @@ Every scenario takes `--qos 0|1|2` and `--json`. New scenarios keep both.
 
 **On one host, stay under about 16k clients in total.** macOS gives every outgoing connection a port from one shared range of 16,384, whatever the destination. Past it, dials wait out their timeout instead of failing fast, so a run reports a steady loss of connections that looks exactly like a broker limit — it was taken for one, and a wrong fix was built for it. `--sub-broker` does not change this: both processes draw from the same range.
 
+**A namespace LimitRange can throttle the generator without saying so.** `deployments/job.yaml` sets an explicit CPU limit because the namespace it first ran in injected 200m onto any container without one, and a bench pod at 200m reported a p99 of a second against a broker sitting at 30m of CPU. Check the pod's effective limits (`kubectl get pod -o jsonpath='{.spec.containers[0].resources}'`) before trusting a tail, and check the broker's too: the mast chart sets a request and no limit, so it gets the same default.
+
+**Comparing two builds locally needs an idle gap between runs.** Storming a fresh core-plus-edges cluster within seconds of killing the previous one produced 319/8,000 connections on one run and 8,000/8,000 on the next, on whichever build ran second, and that is how RESULTS.md came to record a 6.5× regression that did not exist. Kill the previous brokers by exact name and verify they are gone, start the core and then each edge behind a health check, let `TIME_WAIT` drain, wait a minute, then storm. A result that does not reproduce after the gap was measuring the teardown.
+
 **A run against a shared namespace is visible to everyone else in it.** `--prefix` exists so your clients are identifiable in someone else's logs. Use it.
 
 ## RESULTS.md

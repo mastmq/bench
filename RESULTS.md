@@ -1,5 +1,39 @@
 # Results
 
+## 2026-10-05: the wildcard control plane, measured properly this time
+
+Local core and two edges on the same laptop as the September runs, comparing `cdf8285` (one claim subscription per connection) and `b04e6c1` (one `mast.session.>` subscription per node, plus the hot-path lock work). Load: `mastbench connect`, 8,000 clean connections to one edge with the other edge idle, which is the phase that relays every claim to the other node.
+
+| 8k connections to one edge, 60s idle before each run | cdf8285 | b04e6c1 |
+| --- | --- | --- |
+| round 1 | 1,863/s | 1,898/s |
+| round 2 | 11,146/s | 2,645/s |
+| round 3 | 2,869/s | 10,920/s |
+| failures, warnings on any node | 0, 0 | 0, 0 |
+| edge RSS holding 8k | 333–404MB | 311–344MB |
+| NATS subscriptions relayed onto the idle edge | ~8,000 | 0 |
+
+The spread is the laptop: both builds swing between 1.9k and 11k connections a second from one round to the next, and nothing separates them. What does separate them is what the idle edge holds for the busy one's clients, which went from one subscription and one goroutine per connection to nothing, and about 15% of resident memory with it.
+
+**The September entry's "6.5× slower" for this design was the harness, and so were three more false regressions today.** Storming a fresh cluster within seconds of killing the previous one gave 319/8,000 on one run and 8,000/8,000 on the next, on whichever build ran second; a `pkill -f` pattern that did not match the renamed binaries left the old core alive for an hour, so later edges joined it and then lost its store directory; and `wait` without a pid waited on the brokers. With exact-name kills, sequential start, health gates and a minute of idle, every run on both builds was clean. The method is written up in the mast repo's notes; the lesson for this file is that a storm result which does not reproduce after an idle gap is a measurement of the previous run's teardown.
+
+Storming both edges at once, 4k each, was noisy on both builds for a reason that is real and shared: a clean CONNECT costs the edge a KV read through the leaf connection, so 8k connects in a few seconds put 8k reads on one link, the durable consumer missed heartbeats and some reads hit the 5s store timeout (`dropping session ... context deadline exceeded`). That is the per-connect store traffic, not the control plane, and it is the next thing worth measuring.
+
+### ode, single standalone pod, after the deploy
+
+`b04e6c1` in the `baly-ode-central` namespace from a Job on the internal listener, with two caveats that bound every number here. The namespace LimitRange puts a **200m CPU limit** on any container that does not set one, which includes the broker (the chart sets a request and no limit) and the bench pod; and the namespace quota had 516m of CPU limit left, so the bench pod could be raised to 500m and no further.
+
+| Shape | Result |
+| --- | --- |
+| 5,000 connections | 647/s then 1,058/s, 0 failures (September: 1,246/s) |
+| 10 pub × 100/s → 10 subs, bench at 200m | 0% loss, p50 1.3ms, p95 301ms, **p99 1.15s** |
+| same, bench at 500m | 0% loss, p50 1.2ms, p95 16.6ms, **p99 422ms** |
+| 1 pub × 100/s → 100 subs, bench at 200m | 0% loss, p50 1.7ms, p99 977ms |
+| 20 pub × 100/s → 20 subs, QoS 1 | 531/s achieved of 2,000, 0% loss, p50 64ms (September: 552/s) |
+| 20 pub × 100/s → 20 subs, QoS 0, 40k deliveries/s into one pod | 29% loss, p50 10s: the generator pod, broker at 63m CPU |
+
+Giving the generator 2.5× the CPU took the p95 from 301ms to 17ms and halved the p99, so the tail is throttling, and what remains is split between a bench pod still capped at 500m and a broker capped at 200m. The broker never exceeded 137m and ended every run with zero slow consumers, zero NATS disconnects and zero durable-store failures. Held connections cost about 30KB each on this build against 57KB in September. To measure the broker here rather than the namespace, the chart values need an explicit `core.resources.limits.cpu`, and the quota needs room for it.
+
 ## 2026-09-28: QoS 1 and 2 on the durable stream
 
 Same setup as the entry below: one core and two edges on one laptop, publishers on one edge and ten subscribers on the other. This measures [#11](https://github.com/mastmq/mast/issues/11)'s fix, which stores every QoS 1 and 2 publish on a replicated JetStream stream before acknowledging it and has each node read the stream through one consumer of its own.
