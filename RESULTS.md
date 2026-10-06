@@ -34,6 +34,18 @@ Storming both edges at once, 4k each, was noisy on both builds for a reason that
 
 Giving the generator 2.5× the CPU took the p95 from 301ms to 17ms and halved the p99, so the tail is throttling, and what remains is split between a bench pod still capped at 500m and a broker capped at 200m. The broker never exceeded 137m and ended every run with zero slow consumers, zero NATS disconnects and zero durable-store failures. Held connections cost about 30KB each on this build against 57KB in September. To measure the broker here rather than the namespace, the chart values need an explicit `core.resources.limits.cpu`, and the quota needs room for it.
 
+**Rerun on 2026-10-06 with the generator at 2 CPU**, once the quota had room, which removes the generator as the limit:
+
+| Shape | bench 200m (10-05) | bench 2 CPU (10-06) |
+| --- | --- | --- |
+| 5,000 connections | 647/s, 1,058/s | 939/s, 793/s, 0 failures |
+| 10 pub × 100/s → 10 subs | p50 1.3ms, p99 1.15s, 0% loss | p50 1.3ms, p95 509ms, **p99 1.30s**, 0% loss |
+| 1 pub × 100/s → 100 subs | p50 1.7ms, p99 977ms, 0% loss | p50 1.6ms, p95 846ms, **p99 1.41s**, 0% loss |
+| 20 pub × 100/s → 20 subs, QoS 1 | 531/s, p50 64ms | p50 85ms, p99 544ms, 0% loss |
+| 20 pub × 100/s → 20 subs, QoS 0 | 29% loss, p50 10s | **17% loss, p50 4.6s** |
+
+This corrects the paragraph above. Quadrupling the generator's CPU again did not move the tail at 20k deliveries a second, so yesterday's improvement at 500m was mostly run-to-run noise, and the second of p99 belongs to the broker. Its 200m limit is a CFS quota of 20ms of CPU per 100ms period; a broker averaging 30–110m spends that quota in bursts and then sits throttled for the rest of the period, which is exactly a fast median with a tail in the hundreds of milliseconds. The 40k-deliveries/s run still loses messages with a generator that now has headroom, and that is the broker's QoS 0 back-pressure at 200m dropping what it cannot write. None of this is a property of mast; it is what one fifth of a core looks like under bursty fan-out. The broker ended every run Running with no restarts.
+
 ## 2026-09-28: QoS 1 and 2 on the durable stream
 
 Same setup as the entry below: one core and two edges on one laptop, publishers on one edge and ten subscribers on the other. This measures [#11](https://github.com/mastmq/mast/issues/11)'s fix, which stores every QoS 1 and 2 publish on a replicated JetStream stream before acknowledging it and has each node read the stream through one consumer of its own.
