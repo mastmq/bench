@@ -1,5 +1,61 @@
 # Results
 
+## 2026-10-25: what QoS 2 costs, and the mochi ack writes it exposed
+
+Prompted by [mastmq/mast#18](https://github.com/mastmq/mast/issues/18): does QoS 2 hold up under fan-out? Local core and two edges, same 8-core laptop as before, mast `842f16f` (and the same tree built against a patched mochi for the A/B). Publishers on one edge, subscribers on the other via `--sub-broker`, 30s per run, clean sessions, unauthenticated, generator on the same machine.
+
+### Storage is one stream write per publish, whatever the QoS
+
+JetStream state read from the core's `/jsz` before and after each run:
+
+| 10 pub × 200/s → 10 sub | Publishes | `mast_qos` added | KV writes | JetStream API calls |
+| --- | --- | --- | --- | --- |
+| QoS 0 | 60,000 | 0 | 0 | 20 |
+| QoS 1 | 60,000 | 60,000 | 0 | 20 |
+| QoS 2 | 60,000 | 60,000 | 0 | 20 |
+
+At this rate the latencies were indistinguishable too: p50 / p99 of 0.94ms / 3.2ms, 1.3ms / 2.6ms and 1.0ms / 2.1ms.
+
+### QoS 2 collapsed under load, and the stream was not why
+
+| QoS 2 p50 / p99 | Cluster, durable stream | Cluster, `fabric.durable_qos=false` | One all-in-one node |
+| --- | --- | --- | --- |
+| 50 pub × 200/s → 10 sub (100k/s) | 1.3s / 7.1s | 7.0s / 12.8s | 31ms / 270ms |
+| 1 pub × 100/s → 1000 sub (100k/s) | 7.7s / 24s | 6.6s / 13.0s | 7.2s / 21.2s |
+
+QoS 1 in the same places held at tens of milliseconds. A CPU profile of the single node during the 1000-subscriber run: 90% of broker CPU in socket syscalls, 72% under mochi's `WritePacket` and 37% under `processPubrec`, with mast's own code about 5%. The broker used about 2.6 cores and the generator about 3.
+
+mochi wrote every ack the read loop produced with its own `write(2)`: `WritePacket` buffers only while `WriteLoop`'s outbound queue is non-empty, and the read loop never queues there. Upstream [#552](https://github.com/mochi-mqtt/server/pull/552) coalesces acks while the next inbound packet is already buffered. Interleaved A/B, two rounds each:
+
+| QoS 2, cross-node | mochi v2.7.13 p50 / p99 | with #552 p50 / p99 |
+| --- | --- | --- |
+| 50 pub × 200/s → 10 sub | 3.3s / 6.6s · 4.0s / 8.2s | 99ms / 927ms · 191ms / 2.7s |
+| 1 pub × 10/s → 5000 sub | 386ms / 1.2s · 125ms / 445ms | 111ms / 256ms · 124ms / 310ms |
+| 1 pub × 100/s → 1000 sub | 7.7s / 23s · 5.9s / 20s | 6.2s / 19s · 5.1s / 18s |
+
+The first row is the fix. The second is within this laptop's noise — the baseline alone moved threefold between rounds.
+
+### The last row is the protocol
+
+Each of those subscribers receives one message every 10ms, so nothing is ever buffered behind its PUBREC and there is nothing to coalesce. Rate sweep with #552, 1000 cross-node subscribers:
+
+| Deliveries/s | QoS 1 p50 / p99 | QoS 2 p50 / p99 | Broker CPU-s, QoS 1 → 2 |
+| --- | --- | --- | --- |
+| 25k | 8ms / 18ms | 8ms / 22ms | 29 → 47 |
+| 50k | 7ms / 16ms | 13ms / 336ms | 54 → 84 |
+| 75k | 8ms / 56ms | 2.0s / 3.6s | 78 → 90 |
+| 100k | 27ms / 202ms | 5.8s / 17s | 89 → 90 |
+
+A QoS 2 delivery costs about 1.6× the broker CPU of a QoS 1 delivery, and both stop keeping up at the same ~90 CPU-seconds, which is this machine with the generator on it. Where acks cannot be batched, QoS 2's ceiling is about half of QoS 1's. That ratio is the number to carry to other hardware; the absolute rates are the laptop's.
+
+### Reading the shortfalls
+
+Runs that fell seconds behind reported 15–41% of deliveries missing with zero errors. `settleDelay` waits 3s after the last publish, and the backlogs were 7–24s, so this is most likely late rather than lost; these runs cannot tell the two apart. A run that falls behind by more than the settle window should be read as "did not keep up", not as a loss rate.
+
+### Found along the way
+
+`KV_mast_offline` gained 1 and 38 entries during QoS 2 runs whose clients were all clean sessions: mast queued for any absent subscriber, including a clean one caught mid-disconnect. Fixed in mast by checking that the session outlives its connection.
+
 ## 2026-10-05: the wildcard control plane, measured properly this time
 
 Local core and two edges on the same laptop as the September runs, comparing `cdf8285` (one claim subscription per connection) and `b04e6c1` (one `mast.session.>` subscription per node, plus the hot-path lock work). Load: `mastbench connect`, 8,000 clean connections to one edge with the other edge idle, which is the phase that relays every claim to the other node.
